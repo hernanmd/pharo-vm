@@ -1,9 +1,8 @@
 function(find_system_Freetype)
   message(STATUS "Looking for Freetype in the system")
+  include(FindPackageHandleStandardArgs)
   find_package(Freetype)
-  if(Freetype_FOUND)
-    add_dependencies(${VM_LIBRARY_NAME} Freetype::Freetype)
-  else()
+  if(NOT Freetype_FOUND)
     message(STATUS "Freetype not found.")
   endif()
   set(Freetype_FOUND ${Freetype_FOUND} PARENT_SCOPE)
@@ -68,16 +67,54 @@ function(build_Freetype)
   add_dependencies(${VM_LIBRARY_NAME} freetype)
 endfunction()
 
+function(link_to_system_FreeType)
+  # Obtain the FontConfig location
+  find_package(Fontconfig REQUIRED)
+  # FREETYPE_LIBRARY_RELEASE now contains the full path to the library including the file (.so/.dll/.dylib)
+  message(STATUS "Using FreeType library from ${FREETYPE_LIBRARY_RELEASE}")
+  
+  if(NOT Fontconfig_FOUND)
+    message(STATUS "FontConfig not found. Fontconfig_LIBRARIES not set")
+  else()
+    # Fontconfig_LIBRARIES now contains the full path to the library including the file (.so/.dll/.dylib)
+   message(STATUS "Using FontConfig library from ${Fontconfig_LIBRARIES}")
+  endif()
+
+  if(NOT FREETYPE_LIBRARY_RELEASE)
+    message(STATUS "FREETYPE_LIBRARY_RELEASE not set")
+  else()
+    # Warning: Library names were hardcoded in FT2FFILibrary instance side methods
+    if (WIN)
+      add_custom_target(freetype
+        COMMAND ${CMAKE_COMMAND} -E create_symlink ${FREETYPE_LIBRARY_RELEASE} ${LIBRARY_OUTPUT_PATH}/freetype.dll
+        COMMAND ${CMAKE_COMMAND} -E create_symlink ${Fontconfig_LIBRARIES} ${LIBRARY_OUTPUT_PATH}/fontconfig.dll)
+    elseif(OSX)
+        add_custom_target(freetype
+          COMMAND ${CMAKE_COMMAND} -E create_symlink ${FREETYPE_LIBRARY_RELEASE} ${LIBRARY_OUTPUT_PATH}/libfreetype.dylib
+          COMMAND ${CMAKE_COMMAND} -E create_symlink ${Fontconfig_LIBRARIES} ${LIBRARY_OUTPUT_PATH}/libfontconfig.dylib)
+        else() # LINUX
+          add_custom_target(freetype
+          COMMAND ${CMAKE_COMMAND} -E create_symlink ${FREETYPE_LIBRARY_RELEASE} ${LIBRARY_OUTPUT_PATH}/libfreetype.so.6
+          COMMAND ${CMAKE_COMMAND} -E create_symlink ${Fontconfig_LIBRARIES} ${LIBRARY_OUTPUT_PATH}/libfontconfig.so.6)
+    endif()
+  endif(NOT FREETYPE_LIBRARY_RELEASE)
+
+  add_dependencies(${VM_LIBRARY_NAME} freetype)
+endfunction()
+
 if (BUILD_BUNDLE)
   #Only get Freetype if required
   if(PHARO_DEPENDENCIES_PREFER_DOWNLOAD_BINARIES)
     #Download Freetype binaries directly
     download_Freetype()
   else()
-    #Look for Freetype in the system, then build or download if possible
+    # Look for Freetype in the system, then build or download if possible
     find_system_Freetype()
     if(NOT Freetype_FOUND)
         build_Freetype()
+    else()
+      # FreeType found
+      link_to_system_FreeType()
     endif()
-  endif()
-endif()
+  endif(PHARO_DEPENDENCIES_PREFER_DOWNLOAD_BINARIES)
+endif(BUILD_BUNDLE)
