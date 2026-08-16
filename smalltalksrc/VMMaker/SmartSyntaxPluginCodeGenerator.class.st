@@ -24,6 +24,13 @@ SmartSyntaxPluginCodeGenerator >> anyMethodNamed: selector [
 			ifNone: []]
 ]
 
+{ #category : 'CAST translation' }
+SmartSyntaxPluginCodeGenerator >> cCallNode: funcName with: argNodes [
+	"Build a CCallNode for a builtin plugin function and record it in pluginFunctionsUsed."
+	pluginFunctionsUsed add: funcName.
+	^ CCallNode identifier: (CIdentifierNode name: funcName) arguments: argNodes
+]
+
 { #category : 'coercing' }
 SmartSyntaxPluginCodeGenerator >> ccgLoad: aBlock expr: aString asBooleanValueFrom: anInteger [
 	"Answer codestring for boolean coercion (with validating side-effect) of object, as described in comment to ccgLoad:expr:asRawOopFrom:"
@@ -519,6 +526,39 @@ SmartSyntaxPluginCodeGenerator >> generateAsValue: aNode on: aStream indent: anI
 	class ccg: self generateCoerceToValueFrom: aNode receiver on: aStream
 ]
 
+{ #category : 'CAST translation' }
+SmartSyntaxPluginCodeGenerator >> generateCASTAsOop: msgNode [
+	"Translate `expr asOop: ClassSymbol` to the corresponding interpreterProxy coercion call, in CAST (argument or statement) position. Class arg may be _-prefixed from the variable-rename pass."
+
+	| expr clsName |
+	clsName := msgNode arguments first nameOrValue asString.
+	(clsName beginsWith: '_') ifTrue: [ clsName := clsName allButFirst ].
+	expr := msgNode receiver asCASTExpressionIn: self.
+	clsName = 'SmallInteger' ifTrue: [
+		^ self cCallNode: #integerObjectOf with: { expr } ].
+	clsName = 'Float' ifTrue: [
+		^ self cCallNode: #floatObjectOf with: { expr } ].
+	clsName = 'Unsigned' ifTrue: [
+		^ self cCallNode: #positive32BitIntegerFor with: { expr } ].
+	clsName = 'Boolean' ifTrue: [
+			^ CTernaryNode new
+				  condition: expr;
+				  then: (self cCallNode: #trueObject with: {  });
+				  else: (self cCallNode: #falseObject with: {  });
+				  printOnMultipleLines: false;
+				  yourself ].
+	(clsName = 'Oop' or: [ clsName = 'Object' ]) ifTrue: [ ^ expr ].
+	self error: 'first arg of asOop: must identify a class'.
+	^ expr
+]
+
+{ #category : 'CAST translation' }
+SmartSyntaxPluginCodeGenerator >> generateCASTDebugCode: msgNode [
+	"Object>>debugCode: is `false ifTrue: [aBlock value]`. Emit nothing (empty statement) unless the debug flag is set."
+	self generateDebugCode ifTrue: [self error: 'CAST debugCode: emission not supported'].
+	^ CEmptyStatementNode new
+]
+
 { #category : 'translating builtins' }
 SmartSyntaxPluginCodeGenerator >> generateCPtrAsOop: aNode on: aStream indent: anInteger [
 	aStream nextPutAll: '((sqInt)(sqIntptr_t)('.
@@ -713,10 +753,12 @@ SmartSyntaxPluginCodeGenerator >> generateStSize: aNode on: aStream indent: anIn
 	self genCallOf: #stSizeOf: with: aNode receiver on: aStream
 ]
 
-{ #category : 'initialize' }
+{ #category : 'initialization' }
 SmartSyntaxPluginCodeGenerator >> initialize [
 	super initialize.
-	debugFlag := false
+	debugFlag := false.
+	castTranslationDict at: #asOop: put: #generateCASTAsOop:.
+	castTranslationDict at: #debugCode: put: #generateCASTDebugCode:
 ]
 
 { #category : 'translating builtins' }

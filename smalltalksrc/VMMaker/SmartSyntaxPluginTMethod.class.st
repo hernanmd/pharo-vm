@@ -270,11 +270,10 @@ SmartSyntaxPluginTMethod >> namedPrimitiveProlog [
 	^statements
 ]
 
-{ #category : 'private' }
+{ #category : 'C code generator' }
 SmartSyntaxPluginTMethod >> nullReturnExpr [
-
-	^ TReturnNode new
-		setExpression: (TVariableNode new setName: 'null')
+	"Return the expression used for a ^ nil in a primitive. Use a constant nil so the CAST path emits `null` (via nilTranslation) instead of a _-prefixed variable."
+	^ TReturnNode new setExpression: (TConstantNode value: nil)
 ]
 
 { #category : 'private' }
